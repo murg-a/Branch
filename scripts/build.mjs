@@ -17,7 +17,7 @@ const addDirectory = async path => {
   }
 };
 // Explicit source list: never package credentials, local documents or hosting identity.
-for (const name of ['index.html', 'package.json', 'package-lock.json', 'README.md', '.gitignore']) {
+for (const name of ['index.html', 'package.json', 'package-lock.json', 'README.md', '.gitignore', 'vite.config.js']) {
   await addFile(resolve(root, name));
 }
 for (const name of ['src', 'tests', 'scripts']) await addDirectory(resolve(root, name));

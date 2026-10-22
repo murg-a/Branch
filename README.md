@@ -18,7 +18,7 @@ npm test
 npm run build
 ```
 
-Pubblicare `dist/` su un hosting statico HTTPS. Nel checkout ospitato, `.openai/hosting.json` mantiene l’identità del Site esistente. Lo ZIP dei sorgenti non include questa identità e può essere usato indipendentemente.
+Pubblicare `dist/` su un hosting statico HTTPS. I percorsi degli asset sono relativi, quindi la build funziona anche sotto `/Branch/`. Per GitHub Pages, selezionare **Settings → Pages → Build and deployment → Source → GitHub Actions**: il workflow `.github/workflows/pages.yml` esegue test e build a ogni push su `main` e pubblica soltanto `dist/`. Il workflow può essere avviato anche manualmente dalla scheda Actions. Non pubblicare direttamente i sorgenti dalla radice del branch. Nel checkout ospitato, `.openai/hosting.json` mantiene l’identità del Site esistente. Lo ZIP dei sorgenti non include questa identità e può essere usato indipendentemente.
 
 ## Scrittura
 
@@ -72,8 +72,8 @@ Eseguita inoltre verifica in Chromium desktop e telefono: scambio, cronologia un
 
 ## Recuperare il codice
 
-Nel sito: **Impostazioni → Scarica codice sorgente (.zip)**. Il collegamento scarica `/downloads/branch-source.zip`.
+Nel sito: **Impostazioni → Scarica codice sorgente (.zip)**. Il collegamento scarica `./downloads/branch-source.zip`.
 
-Lo ZIP contiene `src/`, `tests/`, `scripts/`, `index.html`, `package.json`, `package-lock.json`, `.gitignore` e questo README. Dopo averlo estratto, aprire un terminale nella cartella `branch/` ed eseguire `npm ci` e `npm run dev`.
+Lo ZIP contiene `src/`, `tests/`, `scripts/`, `index.html`, `package.json`, `package-lock.json`, `vite.config.js`, `.gitignore` e questo README. Dopo averlo estratto, aprire un terminale nella cartella `branch/` ed eseguire `npm ci` e `npm run dev`.
 
 `npm run build` rigenera automaticamente lo ZIP dalla stessa versione dei sorgenti usata per produrre il sito. Il pacchetto esclude documenti locali, credenziali, cronologia Git e configurazione privata dell’hosting. Non contiene `node_modules`: le dipendenze si installano con `npm ci`.
