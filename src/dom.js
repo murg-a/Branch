@@ -27,17 +27,17 @@ export function outwardIcon() {
 }
 
 export function mapPreview(text) {
-  const words = text.match(/\S+/gu) || [],
-    preview = el("span", "map-preview");
-  preview.append(el("span", "map-preview-words", words.slice(0, 10).join(" ")));
-  if (words.length > 10) {
-    const tail = el("span", "map-preview-tail");
-    tail.setAttribute("aria-hidden", "true");
-    preview.append(tail);
-    const lines = el("span", "map-preview-lines");
-    lines.setAttribute("aria-hidden", "true");
-    lines.append(el("span"), el("span"));
-    preview.append(lines);
-  }
+  const preview = el("span", "map-preview");
+  const plain = text.replace(/\s+/gu, " ").trim();
+  const sentence = plain.match(/^.{20,}?[.!?](?:\s|$)/u)?.[0]?.trim();
+  const excerpt =
+    sentence && sentence.length <= 180 ? sentence : plain.slice(0, 160);
+  preview.append(
+    el(
+      "span",
+      "map-preview-words",
+      excerpt + (excerpt.length < plain.length ? "…" : ""),
+    ),
+  );
   return preview;
 }

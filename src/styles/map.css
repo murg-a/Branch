@@ -1,4 +1,8 @@
 /* Map components: base rules, then responsive adaptations. */
+.map-options { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; max-width: 1264px; margin: 0 auto 20px; padding: 0 28px; font-size: 13px; color: var(--mute); }
+.map-options p { margin: 0; }
+.map-options label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.map-empty { text-align: center; padding: 48px 24px; color: var(--mute); }
 .map-labels {
   display: grid;
   margin: 0 auto 22px;
@@ -132,7 +136,7 @@
   overflow: visible;
   white-space: normal;
   min-height: 0;
-  padding-bottom: 28px;
+  padding-bottom: 30px;
   overflow-wrap: anywhere;
 }
 .map-node-cell {

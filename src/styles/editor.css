@@ -1,4 +1,8 @@
 /* Editor components: base rules, then responsive adaptations. */
+.branch-hint { display: flex; align-items: center; gap: 16px; max-width: 1144px; margin: 0 auto 24px; padding: 12px 18px; border: 1px solid var(--line); border-radius: 8px; font: 12px/1.6 var(--ui-font); color: var(--mute); }
+.branch-hint p { margin: 0; flex: 1; }
+.branch-hint strong { color: var(--ink); font-weight: 500; }
+.branch-hint button { min-height: 40px; padding: 6px 10px; color: var(--acc); }
 #text-sheet {
   max-width: 1200px;
   position: relative;
@@ -126,7 +130,7 @@
   border: 1px dashed var(--line);
   border-radius: 50%;
   color: var(--mute);
-  opacity: 0.35;
+  opacity: 0.7;
   padding: 0;
   margin-top: 6px;
   width: 28px;
@@ -144,7 +148,7 @@
   opacity: 0.8;
 }
 .rail-slot:has(.variant-card) .rail-add {
-  display: none;
+  display: block;
 }
 .rail-right {
   left: auto;
@@ -166,7 +170,7 @@
   height: 100%;
   min-height: 0;
   max-height: none;
-  overflow: auto;
+  overflow: hidden;
   padding: 3px 9px;
   scrollbar-width: thin;
   text-align: left;
@@ -197,6 +201,8 @@
   position: absolute;
   pointer-events: none;
 }
+.trunk-paragraph-actions.active { border-left: 2px solid var(--acc); }
+.trunk-paragraph-actions.active::after { content: ""; position: absolute; top: 0; left: -12px; width: 10px; border-top: 1px solid var(--acc); }
 .trunk-arrow {
   position: absolute;
   top: 50%;
@@ -209,7 +215,7 @@
   font: 19px/26px var(--ui-font);
   color: var(--mute);
   pointer-events: auto;
-  opacity: 0.4;
+  opacity: 0;
   background: var(--bg);
 }
 .trunk-arrow.left {
@@ -223,6 +229,8 @@
   color: var(--acc);
   border-color: var(--line);
 }
+.trunk-arrow:focus-visible,
+.trunk-paragraph-actions:hover .trunk-arrow,
 .trunk-arrow:hover {
   opacity: 1;
   color: var(--acc);
@@ -377,6 +385,9 @@
 .text-branches-hidden .trunk:focus-within {
   border-left-color: transparent;
 }
+@media (min-width: 851px) {
+  .trunk-arrow { display: none; }
+}
 @media (min-width: 1600px) {
   #text-sheet {
     max-width: 1320px;
@@ -402,6 +413,7 @@
   }
 }
 @media (max-width: 850px) {
+  .branch-hint { margin-inline: 18px; font-size: 11px; padding: 8px 12px; gap: 8px; }
   .rail {
     display: none;
   }

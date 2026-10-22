@@ -1,6 +1,7 @@
 import * as M from "./model.js";
 import { $, el, button } from "./dom.js";
 export function createPanels({
+  openVariant,
   getDocument,
   getDocuments,
   getActiveBlock,
@@ -22,6 +23,11 @@ export function createPanels({
   const commitMetadata = (blocks) =>
     commit({ text: getDocument().text, blocks }, getActiveId());
   function openEditor(type, blockId, side = null, itemId = null) {
+    if (type === "variant") {
+      if ($("branches-dialog").open) $("branches-dialog").close();
+      openVariant(blockId, side, itemId);
+      return;
+    }
     const current = getDocument();
     const block = current.blocks.find((b) => b.id === blockId);
     if (!block) return;
@@ -226,7 +232,7 @@ export function createPanels({
         group.append(el("p", "empty-message", "Nessuna variante, per ora."));
       if (M.canCreateBranches(block))
         group.append(
-          button("＋ Scrivi una variante", "", () =>
+          button("＋ Crea variante", "", () =>
             openEditor("variant", block.id, side),
           ),
         );

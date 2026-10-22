@@ -110,3 +110,22 @@ test('legacy heading variants stay in backups and can still be exchanged',()=>{
   const exchanged=M.transfer(blocks,blocks[0].id,'R');assert.equal(exchanged.text,'# Altro titolo');assert.equal(exchanged.blocks[0].R.length,1);assert.equal(exchanged.blocks[0].R[0].text,'# Titolo');assert.deepEqual(exchanged.blocks[0].notes,blocks[0].notes);
   const restored=M.importBackup(M.backup({title:'Vecchio documento',text:'# Titolo',blocks}));assert.deepEqual(restored.blocks,blocks);
 });
+
+test('variant labels survive backup and move, and are cleared when the previous main text replaces a variant', () => {
+  const blocks = M.fromMarkdown('Principale\n\nSecondo');
+  blocks[0].R = [{ id: 'labelled', text: 'Alternativa', label: 'Più breve' }];
+  const doc = { title: 'Con etichette', text: 'Principale\n\nSecondo', blocks };
+  const restored = M.importBackup(M.backup(doc));
+  assert.equal(restored.blocks[0].R[0].label, 'Più breve');
+  const moved = M.move(restored.blocks, { id: blocks[0].id, zone: 'R', variantId: 'labelled' }, blocks[1].id, 'L');
+  assert.equal(moved.blocks[1].L[0].label, 'Più breve');
+  const used = M.promote(moved.blocks, blocks[1].id, 'L', 'labelled');
+  assert.equal(used.blocks[1].text, 'Alternativa');
+  assert.equal(used.blocks[1].L[0].text, 'Secondo');
+  assert.equal(used.blocks[1].L[0].label, undefined);
+  assert.equal(used.blocks[1].mainLabel, 'Più breve');
+  const again = M.promote(used.blocks, blocks[1].id, 'L', 'labelled');
+  assert.equal(again.blocks[1].L[0].label, 'Più breve');
+  assert.equal(again.blocks[1].mainLabel, undefined);
+  assert.equal(blocks[0].R[0].label, 'Più breve');
+});

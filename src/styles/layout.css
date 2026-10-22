@@ -1,6 +1,6 @@
 /* Layout components: base rules, then responsive adaptations. */
 header {
-  height: 86px;
+  height: 70px;
   display: grid;
   align-items: center;
   padding: 0 36px;
@@ -20,7 +20,7 @@ header {
   align-items: center;
   gap: 10px;
   padding: 5px 0;
-  font: 600 27px/1.2 var(--ui-font);
+  font: 600 24px/1.2 var(--ui-font);
   letter-spacing: -1px;
   flex-shrink: 0;
 }
@@ -45,6 +45,7 @@ header {
   border-radius: 20px;
   font-size: 14px;
 }
+.library-label { font: 12px/1.4 var(--ui-font); letter-spacing: 0; color: var(--mute); margin-left: 4px; }
 .seg button[aria-pressed="true"] {
   background: var(--acc);
   color: var(--bg);
@@ -73,8 +74,8 @@ header {
   margin: 0 8px;
 }
 .header-actions .export-button {
-  border: 1px solid var(--acc);
-  color: var(--acc);
+  border: 1px solid var(--line);
+  color: var(--ink);
   padding: 9px 15px;
   margin-left: 13px;
   display: flex;
@@ -410,10 +411,8 @@ footer {
   padding-block: 3px;
 }
 .mode-controls .branches-toggle {
-  position: absolute;
-  left: calc(100% + 14px);
-  top: 50%;
-  transform: translateY(-50%);
+  position: static;
+  transform: none;
 }
 @media (min-width: 1600px) {
   header {
@@ -537,6 +536,7 @@ footer {
   .branches-toggle {
     font-size: 13px;
   }
+  .library-label { display: none; }
   .identity {
     gap: 12px;
   }
@@ -720,15 +720,8 @@ footer {
     max-width: 69px;
     font-size: 13px;
   }
-  .mode-controls {
-    padding-bottom: 32px;
-  }
-  .mode-controls .branches-toggle {
-    left: 50%;
-    top: auto;
-    bottom: 0;
-    transform: translateX(-50%);
-  }
+  .mode-controls { gap: 12px; flex-wrap: wrap; max-width: 100%; }
+  .mode-controls .branches-toggle { position: static; transform: none; }
 }
 @media (max-width: 380px) {
   .mode-controls {

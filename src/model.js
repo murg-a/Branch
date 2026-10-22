@@ -49,8 +49,30 @@ export function serialize(blocks){
   const result=live.map((b,i)=>{if(i)offset+=2;const item={...clone(b),start:offset,end:offset+b.text.length};delete item.detached;offset=item.end;return item;});
   return {text:live.map(b=>b.text).join('\n\n'),blocks:[...result,...blocks.filter(b=>b.detached).map(clone)]};
 }
-export function park(blocks,id,side){const result=clone(blocks),b=result.find(b=>b.id===id);if(!canCreateBranches(b)||!b.text.trim()||!['L','R'].includes(side))return null;b[side].unshift({id:uid(),text:b.text});b.text='';return serialize(result);}
-export function promote(blocks,id,side,variantId){const result=clone(blocks),b=result.find(b=>b.id===id),i=b?.[side]?.findIndex(v=>v.id===variantId);if(i==null||i<0)return null;const text=b[side][i].text;if(b.text.trim())b[side][i].text=b.text;else b[side].splice(i,1);b.text=text;return serialize(result);}
+export function park(blocks, id, side) {
+  const result = clone(blocks), b = result.find(b => b.id === id);
+  if (!canCreateBranches(b) || !b.text.trim() || !['L', 'R'].includes(side)) return null;
+  b[side].unshift({ id: uid(), text: b.text, ...(b.mainLabel ? { label: b.mainLabel } : {}) });
+  b.text = '';
+  delete b.mainLabel;
+  return serialize(result);
+}
+export function promote(blocks, id, side, variantId) {
+  const result = clone(blocks), b = result.find(b => b.id === id);
+  if (!b || b.detached || !['L', 'R'].includes(side)) return null;
+  const i = b[side].findIndex(v => v.id === variantId);
+  if (i < 0) return null;
+  const { text, label } = b[side][i];
+  if (b.text.trim()) {
+    b[side][i].text = b.text;
+    if (b.mainLabel) b[side][i].label = b.mainLabel;
+    else delete b[side][i].label;
+  } else b[side].splice(i, 1);
+  b.text = text;
+  if (label) b.mainLabel = label;
+  else delete b.mainLabel;
+  return serialize(result);
+}
 export function sectionIds(blocks,id){const live=blocks.filter(b=>!b.detached),at=live.findIndex(b=>b.id===id);if(at<0)return [];const lv=level(live[at]);if(!lv)return [id];let end=at+1;while(end<live.length&&(!level(live[end])||level(live[end])>lv))end++;return live.slice(at,end).map(b=>b.id);}
 export function move(blocks,source,targetId,position){
   const result=clone(blocks),origin=result.find(b=>b.id===source.id),target=result.find(b=>b.id===targetId);if(!origin||!target||origin.detached||target.detached)return null;

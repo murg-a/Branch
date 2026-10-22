@@ -6,8 +6,10 @@ import {
   setBlocks,
   transferEffect,
   transferField,
+  blocksField,
 } from "./editor.js";
 import { createMapView } from "./map-view.js";
+import { createBranchWorkspace } from "./branch-workspace.js";
 import { createPanels } from "./panels.js";
 import { createStorage } from "./storage.js";
 import { EditorView } from "@codemirror/view";
@@ -136,8 +138,25 @@ const states = new Map(),
   railScroll = new Map();
 let activeTransfer = null,
   applyingTransfer = false;
-function toast(message) {
-  $("toast").textContent = message;
+function toast(message, undoAction = null) {
+  $("toast").replaceChildren(document.createTextNode(message));
+  const undoState = editor?.state;
+  if (undoAction)
+    $("toast").append(
+      button("Annulla", "toast-undo", () => {
+        if (
+          editor.state.doc !== undoState.doc ||
+          editor.state.field(blocksField) !== undoState.field(blocksField)
+        ) {
+          toast(
+            "Il documento è cambiato: usa Annulla nella barra per risalire nella cronologia.",
+          );
+          return;
+        }
+        undoAction();
+        $("toast").hidden = true;
+      }),
+    );
   $("toast").hidden = false;
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => ($("toast").hidden = true), 5000);
@@ -196,6 +215,7 @@ function createState(doc) {
       current.text = text;
       current.blocks = blocks;
       dirty();
+      branchWorkspace.sync();
       renderStats();
       renderOutline();
       renderNotes();
@@ -268,11 +288,8 @@ function commit(result, focusId, extraEffects = []) {
 function parkActive(side) {
   if (!cfg.showBranches) return true;
   const block = activeBlock();
-  if (block) void transferBlock(block.id, side);
+  if (block) openEditor("variant", block.id, side, block[side][0]?.id);
   return true;
-}
-function useVariant(id, side, variantId) {
-  void transferBlock(id, side, variantId);
 }
 function formatText(command) {
   if (mode !== "text" || !editor) return false;
@@ -357,8 +374,8 @@ function variantCard(block, side, variant, index, context) {
   const use = button(
     "",
     "variant-use",
-    () => useVariant(block.id, side, variant.id),
-    "Usa questa variante nel testo principale",
+    () => openEditor("variant", block.id, side, variant.id),
+    "Modifica e confronta questa variante",
   );
   const excerpt = el("span", "variant-excerpt");
   excerpt.append(
@@ -369,22 +386,53 @@ function variantCard(block, side, variant, index, context) {
   use.append(excerpt);
   use.setAttribute(
     "aria-label",
-    "Usa variante: " + (variant.text.slice(0, 80) || "vuota"),
+    "Confronta variante: " + (variant.text.slice(0, 80) || "vuota"),
   );
+  const label = el(
+    "span",
+    "variant-label",
+    variant.label || "Variante " + (index + 1),
+  );
+  card.append(label);
   const tools = el("div", "variant-card-footer");
+  const navigate = (delta) => {
+    const strip = card.parentElement;
+    const cards = [...strip.querySelectorAll(".variant-card")];
+    const next = cards[index + delta];
+    if (!next) return;
+    if (context === "mobile") {
+      openEditor("variant", block.id, side, block[side][index + delta].id);
+      return;
+    }
+    strip.scrollTo({
+      left:
+        strip.scrollLeft +
+        next.getBoundingClientRect().left -
+        card.getBoundingClientRect().left,
+      behavior: "instant",
+    });
+    next.querySelector(".variant-use")?.focus({ preventScroll: true });
+  };
+  const previous = button(
+    "‹",
+    "variant-page",
+    () => navigate(-1),
+    "Variante precedente",
+  );
+  const next = button(
+    "›",
+    "variant-page",
+    () => navigate(1),
+    "Variante successiva",
+  );
+  previous.disabled = index === 0;
+  next.disabled = index === block[side].length - 1;
   tools.append(
-    el(
-      "span",
-      "",
-      String(index + 1).padStart(2, "0") +
-        " / " +
-        String(block[side].length).padStart(2, "0"),
-    ),
-    button(
-      "↗",
-      "variant-edit",
-      () => openEditor("variant", block.id, side, variant.id),
-      "Modifica o elimina questa variante",
+    previous,
+    el("span", "variant-position", `${index + 1} di ${block[side].length}`),
+    next,
+    button("Confronta", "variant-edit", () =>
+      openEditor("variant", block.id, side, variant.id),
     ),
   );
   card.append(use, tools);
@@ -502,24 +550,21 @@ function drawRails() {
         });
         for (const side of ["L", "R"]) {
           const action = button(
-            side === "L" ? "←" : "→",
+            "＋",
             "trunk-arrow " + (side === "L" ? "left" : "right"),
-            () => {
-              void transferBlock(block.id, side);
-            },
+            () => openEditor("variant", block.id, side),
           );
           action.dataset.blockId = block.id;
           action.dataset.side = side;
           action.setAttribute(
             "aria-label",
-            (block[side].length ? "Scambia con il ramo " : "Sposta nel ramo ") +
+            "Crea variante nel ramo " +
               (side === "L" ? "sinistro" : "destro") +
               ": " +
               M.label(block).slice(0, 70),
           );
           action.title = action.getAttribute("aria-label");
-          action.disabled =
-            !!activeTransfer || (!block.text.trim() && !block[side].length);
+          action.disabled = !!activeTransfer;
           action.onpointerdown = (event) => event.preventDefault();
           row.append(action);
         }
@@ -709,6 +754,7 @@ async function transferBlock(id, side, variantId = null) {
 }
 
 function updateBranchVisibility() {
+  $("branch-hint").hidden = !!cfg.branchHintDismissed || !cfg.showBranches;
   document.body.classList.toggle("text-branches-hidden", !cfg.showBranches);
   $("branches-toggle").hidden = mode !== "text";
   $("branches-toggle").setAttribute("aria-checked", String(cfg.showBranches));
@@ -723,6 +769,7 @@ function updateBranchVisibility() {
     (!M.canCreateBranches(block) && !hasBranches);
 }
 function setMode(value) {
+  if (!branchWorkspace.close()) return false;
   cancelMapReorder();
   if (activeTransfer) cancelTransfer();
   mode = value;
@@ -731,6 +778,7 @@ function setMode(value) {
   for (const v of ["text", "map", "markdown"])
     $(v + "-view").hidden = v !== value;
   updateBranchVisibility();
+  document.querySelector(".format-toolbar").hidden = value !== "text";
   updateFormatToolbar();
   if (!editor) return;
   if (value === "map") renderMap();
@@ -740,9 +788,11 @@ function setMode(value) {
     scheduleRails();
   }
   renderStats();
+  return true;
 }
 
 async function switchDocument(id) {
+  if (!branchWorkspace.close()) return;
   if (activeTransfer) cancelTransfer();
   if (current?.id === id) {
     closePanels();
@@ -777,6 +827,7 @@ function renderAll() {
   scheduleRails();
 }
 async function createDocument(document) {
+  if (!branchWorkspace.close()) return;
   if (!storage.available) {
     toast("Archivio non disponibile. Esporta il documento prima di chiudere.");
     return;
@@ -803,6 +854,7 @@ async function createDocument(document) {
   editor.focus();
 }
 async function deleteDocument(id) {
+  if (current?.id === id && !branchWorkspace.close()) return;
   const doc = documents.find((d) => d.id === id);
   if (
     !confirm(
@@ -870,12 +922,44 @@ const mapView = createMapView({
   getMode: () => mode,
   commit,
   openEditor: (...args) => panels.openEditor(...args),
-  transferBlock,
+  openInText: (id) => {
+    if (setMode("text") !== false) jump(id);
+  },
   variantCard,
   toast,
 });
 const renderMap = () => mapView.render();
+const branchWorkspace = createBranchWorkspace({
+  getDocument: () => current,
+  commit,
+  toast,
+  onSelect: (id) => {
+    const block = current.blocks.find((b) => b.id === id);
+    activeId = id;
+    if (mode === "text")
+      editor.dispatch({ selection: { anchor: block.start } });
+    scheduleRails();
+  },
+  returnToText: () => {
+    if (mode === "text") editor.focus();
+  },
+  useVariant: async (id, side, variantId) => {
+    if (activeTransfer) cancelTransfer();
+    if (mode === "text" && cfg.showBranches)
+      await transferBlock(id, side, variantId);
+    else commit(M.promote(current.blocks, id, side, variantId), id);
+  },
+  undo: () => {
+    undo(editor);
+    branchWorkspace.sync();
+  },
+  onChange: () => {
+    if (mode === "map") renderMap();
+    scheduleRails();
+  },
+});
 const panels = createPanels({
+  openVariant: (...args) => branchWorkspace.open(...args),
   getDocument: () => current,
   getDocuments: () => documents,
   getActiveBlock: activeBlock,
@@ -999,6 +1083,10 @@ $("file-input").onchange = async (event) => {
   }
   event.target.value = "";
 };
+$("view-markdown").onclick = () => {
+  if (setMode("markdown") === false) return;
+  $("export-dialog").close();
+};
 $("export-open").onclick = () => $("export-dialog").showModal();
 $("export-full").onclick = exportFull;
 $("export-md").onclick = exportMd;
@@ -1041,6 +1129,11 @@ $("map-add").onclick = () => {
   blocks.splice(index < 0 ? blocks.length : index, 0, block);
   commit(M.serialize(blocks), block.id);
   openEditor("trunk", block.id);
+};
+
+$("branch-hint-dismiss").onclick = () => {
+  cfg.branchHintDismissed = true;
+  configure(true);
 };
 
 $("branches-toggle").onpointerdown = (event) => event.preventDefault();
@@ -1172,7 +1265,7 @@ function jump(id) {
   );
   if (!block) return;
   activeId = id;
-  if (mode === "markdown") setMode("text");
+  if (mode === "markdown" && setMode("text") === false) return;
   if (mode === "text") {
     editor.dispatch({
       selection: { anchor: block.start },

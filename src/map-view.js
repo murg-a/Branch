@@ -8,9 +8,9 @@ import {
 export function createMapView({
   getDocument,
   getMode,
+  openInText,
   commit,
   openEditor,
-  transferBlock,
   variantCard,
   toast,
 }) {
@@ -123,7 +123,17 @@ export function createMapView({
     const container = $("map-rows");
     container.replaceChildren();
     const live = liveBlocks();
+    const onlyBranches = $("map-filter").checked;
+    const visible = new Set();
+    if (onlyBranches)
+      for (const item of M.mapHierarchy(current.blocks)) {
+        if (item.block.L.length + item.block.R.length) {
+          visible.add(item.block.id);
+          item.ancestors.forEach((a) => visible.add(a.id));
+        }
+      }
     for (const item of M.mapHierarchy(current.blocks)) {
+      if (onlyBranches && !visible.has(item.block.id)) continue;
       if (item.ancestors.some((ancestor) => collapsed.has(ancestor.id)))
         continue;
       const { block, level: lv, ancestors } = item;
@@ -161,14 +171,14 @@ export function createMapView({
       const text = button(
         lv ? M.label(block) : block.text || "＋ Scrivi qui",
         "map-text",
-        () => openEditor("trunk", block.id),
-        "Modifica paragrafo",
+        () => openInText(block.id),
+        "Apri nel testo",
       );
       if (!lv && block.text.trim())
         text.replaceChildren(mapPreview(block.text));
       text.setAttribute(
         "aria-label",
-        "Modifica " +
+        "Apri nel testo: " +
           (lv ? "titolo H" + lv + ": " : "paragrafo: ") +
           M.label(block),
       );
@@ -184,26 +194,16 @@ export function createMapView({
       if (M.canCreateBranches(block))
         for (const side of ["L", "R"]) {
           const direction = side === "L" ? "sinistra" : "destra";
-          const description = block[side].length
-            ? "Scambia con il ramo a " + direction
-            : "Sposta nel ramo a " + direction;
+          const description = "Crea variante a " + direction;
           const arrow = button(
-            side === "L" ? "←" : "→",
+            "＋",
             "map-branch-arrow " + (side === "L" ? "left" : "right"),
-            async () => {
-              await transferBlock(block.id, side);
-              const updated = [...$("map-rows").children].find(
-                (row) => row.dataset.id === block.id,
-              );
-              updated
-                ?.querySelector('.map-branch-arrow[data-side="' + side + '"]')
-                ?.focus({ preventScroll: true });
-            },
+            () => openEditor("variant", block.id, side),
             description,
           );
           arrow.dataset.side = side;
           arrow.setAttribute("aria-label", description);
-          arrow.disabled = !block.text.trim() && !block[side].length;
+
           center.append(arrow);
         }
       const tools = el("div", "map-block-tools");
@@ -276,7 +276,16 @@ export function createMapView({
       row.append(sides.L, cell, sides.R);
       container.append(row);
     }
+    if (!container.children.length)
+      container.append(
+        el(
+          "p",
+          "map-empty",
+          "Nessun ramo ancora. Crea una variante nella vista Testo.",
+        ),
+      );
   }
+  $("map-filter").onchange = renderMap;
   function jump(id) {
     const row = [...$("map-rows").children].find(
       (row) => row.dataset.id === id,
@@ -290,6 +299,7 @@ export function createMapView({
       });
     else {
       collapsed.clear();
+      $("map-filter").checked = false;
       renderMap();
       const restored = [...$("map-rows").children].find(
         (row) => row.dataset.id === id,
