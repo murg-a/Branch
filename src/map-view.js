@@ -9,6 +9,7 @@ export function createMapView({
   getDocument,
   getMode,
   openInText,
+  slideVersion,
   commit,
   openEditor,
   variantCard,
@@ -194,15 +195,18 @@ export function createMapView({
       if (M.canCreateBranches(block))
         for (const side of ["L", "R"]) {
           const direction = side === "L" ? "sinistra" : "destra";
-          const description = "Crea variante a " + direction;
+          const description = "Scorri verso " + direction;
           const arrow = button(
-            "＋",
+            side === "L" ? "←" : "→",
             "map-branch-arrow " + (side === "L" ? "left" : "right"),
-            () => openEditor("variant", block.id, side),
+            () => slideVersion(block.id, side),
             description,
           );
           arrow.dataset.side = side;
           arrow.setAttribute("aria-label", description);
+          arrow.disabled =
+            !!block.locked ||
+            (!block[side].length && !block.text.trim() && !block.mainLabel);
 
           center.append(arrow);
         }
@@ -267,6 +271,7 @@ export function createMapView({
           "aria-label",
           add.title + " per " + M.label(block).slice(0, 50),
         );
+        add.disabled = !!block.locked;
         if (M.canCreateBranches(block)) node.append(add);
         block[side].forEach((variant, index) =>
           node.append(variantCard(block, side, variant, index, "map")),

@@ -275,9 +275,6 @@
 .text-branches-hidden #trunk-controls {
   display: none !important;
 }
-.text-branches-hidden #mobile-branches {
-  display: none !important;
-}
 .cm-line.md-heading-1 {
   font-size: 1.65em;
   font-weight: 650;

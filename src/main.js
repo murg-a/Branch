@@ -9,7 +9,7 @@ import {
   blocksField,
 } from "./editor.js";
 import { createMapView } from "./map-view.js";
-import { createBranchWorkspace } from "./branch-workspace.js";
+import { createVersionMenu, bindCarouselGestures } from "./carousel-ui.js";
 import { createPanels } from "./panels.js";
 import { createStorage } from "./storage.js";
 import { EditorView } from "@codemirror/view";
@@ -134,8 +134,7 @@ let editor,
   mode = "text",
   activeId = null,
   railFrame = null;
-const states = new Map(),
-  railScroll = new Map();
+const states = new Map();
 let activeTransfer = null,
   applyingTransfer = false;
 function toast(message, undoAction = null) {
@@ -215,7 +214,7 @@ function createState(doc) {
       current.text = text;
       current.blocks = blocks;
       dirty();
-      branchWorkspace.sync();
+      versionMenu.close();
       renderStats();
       renderOutline();
       renderNotes();
@@ -255,7 +254,6 @@ function updateActive() {
   )?.id;
   const b = activeBlock();
   updateFormatToolbar();
-  $("mobile-count").textContent = b ? b.L.length + b.R.length : 0;
   updateBranchVisibility();
   scheduleRails();
 }
@@ -288,7 +286,7 @@ function commit(result, focusId, extraEffects = []) {
 function parkActive(side) {
   if (!cfg.showBranches) return true;
   const block = activeBlock();
-  if (block) openEditor("variant", block.id, side, block[side][0]?.id);
+  if (block) void transferBlock(block.id, side);
   return true;
 }
 function formatText(command) {
@@ -359,11 +357,26 @@ function renderStats() {
   $("note-count").textContent = notes;
 }
 
+function menuButton(blockId, side = null, variantId = null) {
+  const control = button(
+    "⋯",
+    "paragraph-menu-toggle",
+    (event) => versionMenu.open(event, blockId, side, variantId),
+    "Impostazioni del paragrafo",
+  );
+  control.setAttribute("aria-label", "Impostazioni del paragrafo");
+  control.setAttribute("aria-expanded", "false");
+  control.setAttribute("aria-haspopup", "dialog");
+  control.onpointerdown = (event) => event.preventDefault();
+  return control;
+}
 function variantCard(block, side, variant, index, context) {
   const card = el("div", "variant-card");
-  card.dataset.blockId = block.id;
-  card.dataset.side = side;
-  card.dataset.variantId = variant.id;
+  Object.assign(card.dataset, {
+    blockId: block.id,
+    side,
+    variantId: variant.id,
+  });
   if (
     context === "text" &&
     activeTransfer?.id === block.id &&
@@ -371,80 +384,41 @@ function variantCard(block, side, variant, index, context) {
     activeTransfer.outgoingVariantId === variant.id
   )
     card.classList.add("transfer-target-card");
-  const use = button(
+  const choose = button(
     "",
     "variant-use",
-    () => openEditor("variant", block.id, side, variant.id),
-    "Modifica e confronta questa variante",
+    () => {
+      if (mode !== "text") setMode("text");
+      void transferBlock(block.id, side, variant.id);
+    },
+    "Porta questo ramo al centro",
+  );
+  choose.disabled = !!block.locked;
+  choose.setAttribute(
+    "aria-label",
+    "Porta al centro: " +
+      (variant.label || variant.text.slice(0, 80) || "Spazio vuoto"),
   );
   const excerpt = el("span", "variant-excerpt");
   excerpt.append(
     context === "map" && variant.text.trim()
       ? mapPreview(variant.text)
-      : document.createTextNode(variant.text || "Variante vuota"),
+      : document.createTextNode(variant.text || "Spazio vuoto"),
   );
-  use.append(excerpt);
-  use.setAttribute(
-    "aria-label",
-    "Confronta variante: " + (variant.text.slice(0, 80) || "vuota"),
+  choose.append(excerpt);
+  card.append(
+    el("span", "variant-label", variant.label || "Ramo"),
+    menuButton(block.id, side, variant.id),
+    choose,
   );
-  const label = el(
-    "span",
-    "variant-label",
-    variant.label || "Variante " + (index + 1),
-  );
-  card.append(label);
-  const tools = el("div", "variant-card-footer");
-  const navigate = (delta) => {
-    const strip = card.parentElement;
-    const cards = [...strip.querySelectorAll(".variant-card")];
-    const next = cards[index + delta];
-    if (!next) return;
-    if (context === "mobile") {
-      openEditor("variant", block.id, side, block[side][index + delta].id);
-      return;
-    }
-    strip.scrollTo({
-      left:
-        strip.scrollLeft +
-        next.getBoundingClientRect().left -
-        card.getBoundingClientRect().left,
-      behavior: "instant",
-    });
-    next.querySelector(".variant-use")?.focus({ preventScroll: true });
-  };
-  const previous = button(
-    "‹",
-    "variant-page",
-    () => navigate(-1),
-    "Variante precedente",
-  );
-  const next = button(
-    "›",
-    "variant-page",
-    () => navigate(1),
-    "Variante successiva",
-  );
-  previous.disabled = index === 0;
-  next.disabled = index === block[side].length - 1;
-  tools.append(
-    previous,
-    el("span", "variant-position", `${index + 1} di ${block[side].length}`),
-    next,
-    button("Confronta", "variant-edit", () =>
-      openEditor("variant", block.id, side, variant.id),
-    ),
-  );
-  card.append(use, tools);
   if (context === "map") {
     card.draggable = true;
-    card.ondragstart = (e) => {
+    card.ondragstart = (event) =>
       mapView.startDrag(
-        e,
+        event,
         { id: block.id, zone: side, variantId: variant.id },
         variant.text,
       );
-    };
     card.ondragend = mapView.clearDrag;
   }
   return card;
@@ -497,8 +471,6 @@ function drawRails() {
       if (!cfg.showBranches || mode !== "text") return;
       for (const side of ["L", "R"]) {
         const container = $(side === "L" ? "rail-left" : "rail-right");
-        for (const strip of container.querySelectorAll(".variant-strip"))
-          railScroll.set(strip.dataset.scrollKey, strip.scrollLeft);
         container.replaceChildren();
         if (!wide) continue;
         for (const { block, rect } of items) {
@@ -507,36 +479,38 @@ function drawRails() {
             "div",
             "rail-slot" + (block.id === activeId ? " active" : ""),
           );
-          slot.dataset.blockId = block.id;
-          slot.dataset.side = side;
+          Object.assign(slot.dataset, { blockId: block.id, side });
           slot.style.top = rect.top - sheet.top + "px";
           slot.style.setProperty("--paragraph-height", rect.height + "px");
-          const add = button(
-            "+",
-            "rail-add",
-            () => openEditor("variant", block.id, side),
-            "Scrivi una variante " + (side === "L" ? "a sinistra" : "a destra"),
+          const lineHeight =
+            cfg.size * 0.84 * (cfg.font === "mono" ? 0.82 : 1) * 1.6;
+          slot.style.setProperty(
+            "--preview-lines",
+            String(
+              Math.max(
+                1,
+                Math.floor(
+                  (Math.min(200, Math.max(64, rect.height)) - 26) / lineHeight,
+                ),
+              ),
+            ),
           );
-          add.setAttribute(
-            "aria-label",
-            add.title + " per " + M.label(block).slice(0, 50),
-          );
-          const strip = el("div", "variant-strip"),
-            scrollKey = current.id + ":" + block.id + ":" + side;
-          strip.dataset.scrollKey = scrollKey;
-          block[side].forEach((variant, index) =>
-            strip.append(variantCard(block, side, variant, index, "text")),
-          );
-          if (M.canCreateBranches(block)) slot.append(add);
-          slot.append(strip);
+          if (block[side][0])
+            slot.append(variantCard(block, side, block[side][0], 0, "text"));
           container.append(slot);
-          strip.scrollLeft = railScroll.get(scrollKey) || 0;
         }
       }
       const controls = $("trunk-controls");
       controls.replaceChildren();
       for (const { block, rect } of items) {
-        if (!M.canCreateBranches(block)) continue;
+        if (
+          !M.canCreateBranches(block) &&
+          !block.L.length &&
+          !block.R.length &&
+          !block.locked &&
+          !block.mainLabel
+        )
+          continue;
         const row = el(
           "div",
           "trunk-paragraph-actions" + (block.id === activeId ? " active" : ""),
@@ -550,56 +524,42 @@ function drawRails() {
         });
         for (const side of ["L", "R"]) {
           const action = button(
-            "＋",
+            side === "L" ? "←" : "→",
             "trunk-arrow " + (side === "L" ? "left" : "right"),
-            () => openEditor("variant", block.id, side),
+            () => void transferBlock(block.id, side),
           );
           action.dataset.blockId = block.id;
           action.dataset.side = side;
           action.setAttribute(
             "aria-label",
-            "Crea variante nel ramo " +
+            "Scorri verso il ramo " +
               (side === "L" ? "sinistro" : "destro") +
               ": " +
               M.label(block).slice(0, 70),
           );
           action.title = action.getAttribute("aria-label");
-          action.disabled = !!activeTransfer;
+          action.disabled =
+            !!block.locked ||
+            (!block[side].length && !block.text.trim() && !block.mainLabel) ||
+            (!M.canCreateBranches(block) && !block[side].length);
           action.onpointerdown = (event) => event.preventDefault();
           row.append(action);
+        }
+        if (block.mainLabel)
+          row.append(el("span", "trunk-version-title", block.mainLabel));
+        if (
+          block.L.length ||
+          block.R.length ||
+          block.locked ||
+          block.mainLabel
+        ) {
+          row.append(menuButton(block.id));
+          if (block.locked) row.append(el("span", "trunk-pin", "Bloccato"));
         }
         controls.append(row);
       }
     },
   });
-}
-function visibleVariant(block, side) {
-  const container = $(side === "L" ? "rail-left" : "rail-right"),
-    slot = [...container.children].find(
-      (node) => node.dataset.blockId === block.id,
-    );
-  const strip =
-    mode === "map"
-      ? [...$("map-rows").children]
-          .find((row) => row.dataset.id === block.id)
-          ?.querySelector(".map-side." + (side === "L" ? "left" : "right"))
-      : slot?.querySelector(".variant-strip");
-  if (!strip) return block[side][0];
-  const area = strip.getBoundingClientRect();
-  let best = null,
-    overlap = 0;
-  for (const card of strip.children) {
-    const rect = card.getBoundingClientRect(),
-      width = Math.max(
-        0,
-        Math.min(area.right, rect.right) - Math.max(area.left, rect.left),
-      );
-    if (width > overlap) {
-      overlap = width;
-      best = block[side].find((v) => v.id === card.dataset.variantId);
-    }
-  }
-  return best || block[side][0];
 }
 function branchRectangle(id, side, variantId, trunk) {
   const container = $(side === "L" ? "rail-left" : "rail-right");
@@ -646,15 +606,19 @@ function cancelTransfer() {
   scheduleRails();
 }
 async function transferBlock(id, side, variantId = null) {
-  if (activeTransfer || !current || (mode === "text" && !cfg.showBranches))
-    return;
+  if (!current || (mode === "text" && !cfg.showBranches)) return;
+  if (activeTransfer) cancelTransfer();
+  versionMenu.close();
   const block = current.blocks.find((item) => item.id === id && !item.detached);
-  if (!block) return;
-  const incoming =
-    block[side]?.find((item) => item.id === variantId) ||
-    visibleVariant(block, side);
-  const result = M.transfer(current.blocks, id, side, incoming?.id);
+  if (!block || block.locked) return;
+  const incoming = variantId
+    ? block[side]?.find((item) => item.id === variantId)
+    : block[side]?.[0];
+  const result = variantId
+    ? M.focusVersion(current.blocks, id, side, variantId)
+    : M.slideVersion(current.blocks, id, side);
   if (!result) return;
+  const outgoingSide = side === "R" ? "L" : "R";
   const canAnimate =
     mode === "text" &&
     !document.querySelector("dialog[open]") &&
@@ -662,8 +626,6 @@ async function transferBlock(id, side, variantId = null) {
     typeof Element.prototype.animate === "function";
   if (!canAnimate) {
     commit(result, id);
-    if ($("branches-dialog").open) renderMobileVariants();
-    if (mode === "text") editor.focus();
     return;
   }
   const fromTrunk = paragraphGeometry(editor, block),
@@ -692,13 +654,13 @@ async function transferBlock(id, side, variantId = null) {
         fontWeight: "400",
       };
   const targetBlock = result.blocks.find((item) => item.id === id),
-    outgoingVariant = block.text.trim()
-      ? targetBlock[side].find((item) => item.id === incoming?.id) ||
-        targetBlock[side][0]
-      : null;
+    outgoingVariant =
+      targetBlock[outgoingSide].find(
+        (item) => item.id === block.mainVersionId,
+      ) || targetBlock[outgoingSide][0];
   const transfer = {
     id,
-    side,
+    side: outgoingSide,
     outgoingVariantId: outgoingVariant?.id,
     ghosts: [],
     animations: [],
@@ -729,7 +691,12 @@ async function transferBlock(id, side, variantId = null) {
     if (activeTransfer !== transfer) return;
     const updated = current.blocks.find((item) => item.id === id),
       toTrunk = paragraphGeometry(editor, updated),
-      toBranch = branchRectangle(id, side, outgoingVariant?.id, toTrunk);
+      toBranch = branchRectangle(
+        id,
+        outgoingSide,
+        outgoingVariant?.id,
+        toTrunk,
+      );
     if (outgoing)
       transfer.animations.push(fly(outgoing, toBranch, branchType, true));
     if (arriving) {
@@ -761,15 +728,9 @@ function updateBranchVisibility() {
   $("branches-toggle").title = cfg.showBranches
     ? "Nascondi rami"
     : "Mostra rami";
-  const block = activeBlock(),
-    hasBranches = !!block && block.L.length + block.R.length > 0;
-  $("mobile-branches").hidden =
-    mode !== "text" ||
-    !cfg.showBranches ||
-    (!M.canCreateBranches(block) && !hasBranches);
 }
 function setMode(value) {
-  if (!branchWorkspace.close()) return false;
+  versionMenu.close();
   cancelMapReorder();
   if (activeTransfer) cancelTransfer();
   mode = value;
@@ -792,7 +753,7 @@ function setMode(value) {
 }
 
 async function switchDocument(id) {
-  if (!branchWorkspace.close()) return;
+  versionMenu.close();
   if (activeTransfer) cancelTransfer();
   if (current?.id === id) {
     closePanels();
@@ -827,7 +788,7 @@ function renderAll() {
   scheduleRails();
 }
 async function createDocument(document) {
-  if (!branchWorkspace.close()) return;
+  versionMenu.close();
   if (!storage.available) {
     toast("Archivio non disponibile. Esporta il documento prima di chiudere.");
     return;
@@ -854,7 +815,7 @@ async function createDocument(document) {
   editor.focus();
 }
 async function deleteDocument(id) {
-  if (current?.id === id && !branchWorkspace.close()) return;
+  versionMenu.close();
   const doc = documents.find((d) => d.id === id);
   if (
     !confirm(
@@ -922,6 +883,7 @@ const mapView = createMapView({
   getMode: () => mode,
   commit,
   openEditor: (...args) => panels.openEditor(...args),
+  slideVersion: (id, side) => void transferBlock(id, side),
   openInText: (id) => {
     if (setMode("text") !== false) jump(id);
   },
@@ -929,37 +891,41 @@ const mapView = createMapView({
   toast,
 });
 const renderMap = () => mapView.render();
-const branchWorkspace = createBranchWorkspace({
+const versionMenu = createVersionMenu({
   getDocument: () => current,
   commit,
   toast,
-  onSelect: (id) => {
-    const block = current.blocks.find((b) => b.id === id);
-    activeId = id;
-    if (mode === "text")
-      editor.dispatch({ selection: { anchor: block.start } });
-    scheduleRails();
-  },
-  returnToText: () => {
-    if (mode === "text") editor.focus();
-  },
-  useVariant: async (id, side, variantId) => {
-    if (activeTransfer) cancelTransfer();
-    if (mode === "text" && cfg.showBranches)
-      await transferBlock(id, side, variantId);
-    else commit(M.promote(current.blocks, id, side, variantId), id);
-  },
-  undo: () => {
-    undo(editor);
-    branchWorkspace.sync();
-  },
-  onChange: () => {
+  undo: () => undo(editor),
+  refresh: () => {
     if (mode === "map") renderMap();
     scheduleRails();
   },
 });
+function activateVariant(id, side, itemId = null) {
+  const block = current.blocks.find((b) => b.id === id && !b.detached);
+  if (!block || block.locked) {
+    toast("Sblocca il paragrafo per scorrere tra i rami.");
+    return;
+  }
+  setMode("text");
+  if (itemId) {
+    void transferBlock(id, side, itemId);
+    jump(id);
+    return;
+  }
+  // The outer empty position is a new alternative, edited directly in the flow.
+  let result = { blocks: current.blocks };
+  const steps = block[side].length + 1;
+  for (let i = 0; i < steps; i++) {
+    const next = M.slideVersion(result.blocks, id, side);
+    if (!next) break;
+    result = next;
+  }
+  if (result.text !== undefined) commit(result, id);
+  jump(id);
+}
 const panels = createPanels({
-  openVariant: (...args) => branchWorkspace.open(...args),
+  openVariant: activateVariant,
   getDocument: () => current,
   getDocuments: () => documents,
   getActiveBlock: activeBlock,
@@ -981,7 +947,6 @@ const {
   renderOutline,
   renderFinder,
   renderNotes,
-  renderMobileVariants,
   renderDocuments,
   closePanels,
   showLeft,
@@ -1009,6 +974,37 @@ async function init() {
   $("save-status").textContent = storage.available
     ? "Salvato sul dispositivo"
     : "Archivio non disponibile";
+  bindCarouselGestures({
+    element: editor.contentDOM,
+    blockAt: (x, y) => {
+      if (mode !== "text") return null;
+      const pos = editor.posAtCoords({ x, y });
+      if (pos == null) return null;
+      const blocks = liveBlocks();
+      const block =
+        blocks.find((b) => b.start === pos) ||
+        blocks.find((b) => pos > b.start && pos <= b.end);
+      if (!block) return null;
+      const rect = paragraphGeometry(editor, block);
+      if (
+        y < rect.top ||
+        y > rect.top + Math.max(rect.height, block.text ? 0 : 48)
+      )
+        return null;
+      return block?.id;
+    },
+    canSlide: (id) => {
+      const b = current?.blocks.find((b) => b.id === id);
+      return (
+        mode === "text" &&
+        cfg.showBranches &&
+        b &&
+        !b.locked &&
+        (M.canCreateBranches(b) || b.L.length || b.R.length)
+      );
+    },
+    slide: (id, side) => void transferBlock(id, side),
+  });
   configure();
   renderAll();
   updateActive();

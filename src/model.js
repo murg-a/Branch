@@ -36,7 +36,7 @@ export function reconcile(oldBlocks,text,mapPos){
     // Fully removed paragraphs keep their alternatives and notes in an explicit archive.
     if(old.text&&start===end&&!exact){if(hasExtras(old))detached.push({...clone(old),detached:true,start:-1,end:-1});continue;}
     if(candidate){
-      if(!claimed.has(candidate)){candidate.id=old.id;claimed.add(candidate);}
+      if(!claimed.has(candidate)){candidate.id=old.id;for(const key of ['mainLabel','mainVersionId','locked'])if(old[key]!==undefined)candidate[key]=clone(old[key]);claimed.add(candidate);}
       candidate.L.push(...clone(old.L));candidate.R.push(...clone(old.R));candidate.notes.push(...clone(old.notes));
     }else if(!old.text){next.push({...clone(old),start:Math.min(start,text.length),end:Math.min(start,text.length),text:''});}
     else if(hasExtras(old))detached.push({...clone(old),detached:true,start:-1,end:-1});
@@ -78,8 +78,8 @@ export function move(blocks,source,targetId,position){
   const result=clone(blocks),origin=result.find(b=>b.id===source.id),target=result.find(b=>b.id===targetId);if(!origin||!target||origin.detached||target.detached)return null;
   if(position==='L'||position==='R'){
     if(!canCreateBranches(target))return null;
-    if(source.zone==='T'&&level(origin))return null;
-    if(source.zone==='T'){if(!origin.text)return null;target[position].unshift({id:uid(),text:origin.text});origin.text='';}
+    if(source.zone==='T'&&(level(origin)||origin.locked))return null;
+    if(source.zone==='T'){if(!origin.text)return null;target[position].unshift({id:origin.mainVersionId||uid(),text:origin.text,...(origin.mainLabel?{label:origin.mainLabel}:{})});origin.text='';delete origin.mainLabel;delete origin.mainVersionId;}
     else{const index=origin[source.zone]?.findIndex(v=>v.id===source.variantId);if(index==null||index<0)return null;const [variant]=origin[source.zone].splice(index,1);target[position].unshift(variant);}
     return serialize(result);
   }
@@ -91,7 +91,7 @@ export function move(blocks,source,targetId,position){
   }
   const index=origin[source.zone]?.findIndex(v=>v.id===source.variantId);if(index==null||index<0)return null;
   const [variant]=origin[source.zone].splice(index,1);
-  if(!target.text.trim()){target.text=variant.text;}else result.splice(result.indexOf(target)+(position==='after'?1:0),0,newBlock(variant.text));
+  if(!target.text.trim()&&!target.locked){target.text=variant.text;target.mainVersionId=variant.id;if(variant.label)target.mainLabel=variant.label;else delete target.mainLabel;}else result.splice(result.indexOf(target)+(position==='after'?1:0),0,newBlock(variant.text));
   return serialize(result);
 }
 export function backup(doc){return JSON.stringify({format:'branch',version:1,document:{title:doc.title,text:doc.text,blocks:doc.blocks}},null,2);}
@@ -168,6 +168,61 @@ export function transfer(blocks, id, side, variantId = null) {
     return promote(blocks, id, side, variant.id);
   }
   return park(blocks, id, side);
+}
+
+// L and R are ordered from the center outward. Moving right takes R[0]
+// into the center and moves the previous center to L[0], without swapping order.
+export function slideVersion(blocks, id, side) {
+  if (!['L', 'R'].includes(side)) return null;
+  const result = clone(blocks), block = result.find(b => b.id === id && !b.detached);
+  if (!block || block.locked || (!canCreateBranches(block) && !block[side].length)) return null;
+  const incoming = block[side].shift();
+  if (!incoming && !block.text.trim() && !block.mainLabel) return null;
+  const other = side === 'R' ? 'L' : 'R';
+  if (block.text.trim() || block.mainLabel) block[other].unshift({
+    id: block.mainVersionId || uid(), text: block.text,
+    ...(block.mainLabel ? { label: block.mainLabel } : {}),
+  });
+  block.text = incoming?.text || '';
+  block.mainVersionId = incoming?.id || uid();
+  if (incoming?.label) block.mainLabel = incoming.label;
+  else delete block.mainLabel;
+  return serialize(result);
+}
+
+export function focusVersion(blocks, id, side, variantId, pin = false) {
+  if (!['L', 'R'].includes(side)) return null;
+  let result = { blocks: clone(blocks) };
+  const block = result.blocks.find(b => b.id === id && !b.detached);
+  if (!block || (block.locked && !pin)) return null;
+  const index = block[side].findIndex(v => v.id === variantId);
+  if (index < 0) return null;
+  block.locked = false;
+  for (let i = 0; i <= index; i++) {
+    result = slideVersion(result.blocks, id, side);
+    if (!result) return null;
+  }
+  if (pin) result.blocks.find(b => b.id === id).locked = true;
+  return result;
+}
+
+export function removeVersion(blocks, id, side = null, variantId = null) {
+  const result = clone(blocks), block = result.find(b => b.id === id && !b.detached);
+  if (!block) return null;
+  if (side) {
+    if (!['L', 'R'].includes(side)) return null;
+    const index = block[side].findIndex(v => v.id === variantId);
+    if (index < 0) return null;
+    block[side].splice(index, 1);
+  } else {
+    const incoming = block.R.shift() || block.L.shift();
+    block.text = incoming?.text || '';
+    block.mainVersionId = incoming?.id || uid();
+    if (incoming?.label) block.mainLabel = incoming.label;
+    else delete block.mainLabel;
+    block.locked = false;
+  }
+  return serialize(result);
 }
 
 // CodeMirror offsets are UTF-16 positions, including for Unicode selections.

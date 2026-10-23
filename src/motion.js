@@ -25,7 +25,7 @@ export function fly(node, destination, typography, toBranch) {
       backgroundColor: toBranch ? 'var(--card)' : 'var(--bg)',
       borderColor: toBranch ? 'var(--acc)' : 'transparent',
     },
-  ], { duration: 420, easing: 'cubic-bezier(.22,.7,.2,1)', fill: 'forwards' });
+  ], { duration: 240, easing: 'cubic-bezier(.22,.7,.2,1)', fill: 'forwards' });
 }
 
 let mapMotion = null;

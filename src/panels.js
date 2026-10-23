@@ -24,7 +24,6 @@ export function createPanels({
     commit({ text: getDocument().text, blocks }, getActiveId());
   function openEditor(type, blockId, side = null, itemId = null) {
     if (type === "variant") {
-      if ($("branches-dialog").open) $("branches-dialog").close();
       openVariant(blockId, side, itemId);
       return;
     }
@@ -82,7 +81,6 @@ export function createPanels({
     }
     $("edit-dialog").close();
     editing = null;
-    if ($("branches-dialog").open) renderMobileVariants();
   }
 
   function renderOutline() {
@@ -213,33 +211,6 @@ export function createPanels({
     }
   }
 
-  function renderMobileVariants() {
-    const block = getActiveBlock();
-    if (!block) return;
-    $("mobile-paragraph").textContent =
-      block.text ||
-      "Il tronco è vuoto: scegli una variante o scrivi una nuova versione.";
-    const box = $("mobile-variants");
-    box.replaceChildren();
-    for (const side of ["L", "R"]) {
-      if (!M.canCreateBranches(block) && !block[side].length) continue;
-      const group = el("div", "mobile-variant-group");
-      group.append(el("h3", "", side === "L" ? "A SINISTRA" : "A DESTRA"));
-      block[side].forEach((variant, index) =>
-        group.append(variantCard(block, side, variant, index, "mobile")),
-      );
-      if (!block[side].length)
-        group.append(el("p", "empty-message", "Nessuna variante, per ora."));
-      if (M.canCreateBranches(block))
-        group.append(
-          button("＋ Crea variante", "", () =>
-            openEditor("variant", block.id, side),
-          ),
-        );
-      box.append(group);
-    }
-  }
-
   function renderDocuments() {
     const current = getDocument();
     const nav = $("documents");
@@ -356,10 +327,6 @@ export function createPanels({
       });
     }
     $("edit-dialog").addEventListener("close", () => (editing = null));
-    $("mobile-branches").onclick = () => {
-      renderMobileVariants();
-      $("branches-dialog").showModal();
-    };
     $("help-open").onclick = () => $("help-dialog").showModal();
     $("panel-add-note").onclick = () => {
       const block = getActiveBlock();
@@ -377,7 +344,6 @@ export function createPanels({
     renderOutline,
     renderFinder,
     renderNotes,
-    renderMobileVariants,
     renderDocuments,
     closePanels,
     showLeft,

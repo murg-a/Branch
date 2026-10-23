@@ -61,3 +61,27 @@ test("structural branch operations keep text and metadata in a single undo/redo 
   assert(redo(target));
   assert.deepEqual(state.field(blocksField), parked.blocks);
 });
+
+test("carousel navigation and deletion undo and redo text, order, notes, and version titles together", () => {
+  const doc = document();
+  doc.blocks[0].mainLabel = 'Originale';
+  doc.blocks[0].mainVersionId = 'original';
+  doc.blocks[0].R[0].label = 'Alternativa breve';
+  let state = createEditorState(doc, hooks);
+  const target = { get state() { return state; }, dispatch: tr => { state = tr.state; } };
+  const apply = result => {
+    state = state.update({
+      changes: { from: 0, to: state.doc.length, insert: result.text },
+      effects: setBlocks.of(result.blocks),
+      annotations: [Transaction.userEvent.of('input.branch'), isolateHistory.of('full')],
+    }).state;
+  };
+  const moved = M.slideVersion(state.field(blocksField), doc.blocks[0].id, 'R');
+  apply(moved);
+  assert(undo(target)); assert.deepEqual(state.field(blocksField), doc.blocks);
+  assert(redo(target)); assert.deepEqual(state.field(blocksField), moved.blocks);
+  apply(M.removeVersion(state.field(blocksField), doc.blocks[0].id));
+  assert.equal(state.field(blocksField)[0].mainLabel, 'Originale');
+  assert(undo(target)); assert.deepEqual(state.field(blocksField), moved.blocks);
+  assert.equal(state.doc.toString(), moved.text);
+});
